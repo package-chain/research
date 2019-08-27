@@ -114,7 +114,7 @@ impl Chain {
         } else {
             if self.predict(output, output2) == Prediction::NonDeterminism {
                 if random() > p_continue {
-                    validate(validators, derivation, output, p_continue)
+                    self.validate(derivation, output)
                 } else {
                     Result::Valid
                 }
@@ -164,7 +164,7 @@ to the validators proportionally to the rewardable build times. If a validation
 yields misbehaviour then all previous validators and the publisher are slashed.
 The publisher is slashed for trying to distribute malware and the previous
 validators are slashed for either claiming they built the derivation or copying
-the output, or purposefully faking non determinism, by for example manipulating
+the output and purposefully faking non determinism, by for example manipulating
 a time stamp.
 
 ### Publishing a derivation
