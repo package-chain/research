@@ -100,6 +100,7 @@ performed to assess suitability.
   only a compatible architecture but the exact same cpu model.
 - file layout of the output: This is unlikely to change due to build non
   determinism.
+- build log: Build parallelism can cause the build log to be out order
 
 ### Preventing collusion
 Substituters are randomly selected based on a VRF. This makes hard for one
