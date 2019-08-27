@@ -71,87 +71,114 @@ discovered through mdns are optimistically assumed to have any block.
 The graphsync protocol is used to request all child blocks of a given cid. Over
 the bitswap protocol blocks are requested and exchanged.
 
+### Derivation to output mapping
+The build layer broadcasts built derivations via a pubsub protocol. Builders
+maintain a set of trusted builders.
+
 ## Blockchain layer
-The blockchain layer is responsible for creating proofs that a derivation
-results in an output. The basic roles in this process are authority, publisher
-and substituter. An authority is a participant in the block minting process.
+The blockchain layer is responsible for creating proofs that an output is the
+result of a derivation. The basic roles in this process are authority, publisher
+and validator. An authority is a participant in the block minting process.
 This is not a role specific to this chain but is one provided by the underlying
-blockchain framework. A publisher is any network participant that submits
-derivations to the chain. A substituter builds the derivations and creates a
-proof of build. Publishers and substituters are light clients that communicate
-with authorities, they are not required to store the entire blockchain state.
+blockchain framework. A publisher is any network participant that submits a
+claim, that an output is a valid output of a derivation. A validator builds a
+derivation when requested by the authority and provides the result.
 
-### Proof of build
-Proof of build works through a cryptographic commitment scheme, where a number
-of substituters provide various easily verifiable properties of the output that
-are required to match. Care must be taken to make sure that those differences
-are build independent, in case of a non-reproducible build. A combination of
-the following properties could lead to enough redundancy that they can't
-be guessed and non determinism can be detected. An empirical study must be
-performed to assess suitability.
+### Validation
+This claim is verified in an iterated probabilistic prisoners dilema game using
+the following algorithm:
 
-- retained dependencies: every output of a derivation has a set of retained
-  dependencies. These are unlikely to change due to build non determinism. If
-  only the inputs change but not the builder, this property might be guessable.
-- size of the build output: Build non determinism can influence the size of the
-  build output. An example would be a cpu supporting simd instructions or
-  another form of cpu extension, and the substituters getting different output
-  sizes. One possible solution would be to require substituters to have not
-  only a compatible architecture but the exact same cpu model.
-- file layout of the output: This is unlikely to change due to build non
-  determinism.
-- build log: Build parallelism can cause the build log to be out order
+```rust
+struct Chain {
+    /// Registered validators
+    validators: Vec<Validator>,
+    /// Probability that result is validated again
+    p_continue: f32,
+}
 
-### Preventing collusion
-Substituters are randomly selected based on a VRF. This makes hard for one
-substituter to pose as multiple and only build the output derivation once.
+impl Chain {
+    pub fn claim(&self, derivation: Cid, output: Cid) {
+        let result = self.validate(derivation, output);
+        self.apply_incentives(result);
+    }
+    
+    fn validate(&self, derivation: Cid, output: Cid) -> Result {
+        let validator = self.validators[random(self.validators.len())];
+        let output2 = validator.build(derivation);
+        if output == output2 {
+            if random() > self.p_continue {
+                self.validate(derivation, output)
+            } else {
+                Result::Valid
+            }
+        } else {
+            if self.predict(output, output2) == Prediction::NonDeterminism {
+                if random() > p_continue {
+                    validate(validators, derivation, output, p_continue)
+                } else {
+                    Result::Valid
+                }
+            } else {
+                Result::Misbehaviour
+            }
+        }
+    }
 
-### Preventing modification
-To make sure that the substituter does not have time to modify the build in
-any malicious way and assuming most substituters are honest, be take the
-first finished substituter as the base build time measured in number of blocks.
-and require that the other substituters finish in `f(build_time_base)`.
+    fn predict(output1: Cid, output2: Cid) -> Prediction;
+    
+    fn apply_incentives(&self);
+}
 
-### Incentivising substituters
+enum Result {
+    Valid,
+    Misbehaviour,
+}
+
+enum Prediction {
+    NonDeterminism,
+    Misbehaviour,
+}
+```
+
+### Prediction market
+To determine if the differences between build output are due to non determinism
+or a malicious actor a prediction market is consulted. Inspecting the results
+should reveal the cause.
+
+### Incentivising validators
 A basic incentivisation scheme would be to reward substituters by minting
-tokens according to `payout(base_build_time)`. This basic scheme has some
-downsides.
+tokens according to `payout(build_time)`. This basic scheme has some downsides.
 
 1. Incentivises substituters to delay reporting their results to increase their
 payout.
-
-Payout must reward the first substituter to commit more than the last. An
-exponential payout function would incentivise substituters to build and commit
-the derivation as quickly as possible. We end up with the following payout
-function: `payout(rewardable_build_time(base_build_time, rank))`.
-
 2. The inflation rate is unpredictable.
 
-We introduce a fixed inflation rate. From the fixed inflation rate we calculate
-a constant amount of tokens minted per block. We reward substituters
-proportional to their rewardable build times.
+To correct for this we keep track of validators efficiency factor, and introduce
+a fixed inflation rate. We define the average efficiency factor to be 1. We take
+the self reported build time `u_i` and compute the average build time `u_a`. Then
+we calculate the efficiency factors `r_i` of each validator with `r_i = u_i / u_a`.
+The average build time is added as the validators rewardable build time to the
+current payment period. At the end of the payment period a constant amount of
+tokens are minted according to the set inflation rate and are distributed
+to the validators proportionally to the rewardable build times. If a validation
+yields misbehaviour then all previous validators and the publisher are slashed.
+The publisher is slashed for trying to distribute malware and the previous
+validators are slashed for either claiming they built the derivation or copying
+the output, or purposefully faking non determinism, by for example manipulating
+a time stamp.
 
 ### Publishing a derivation
-1. Publisher sends a transaction to an authority. The transaction contains
-the cid of the derivation, a sealed commitment to reveal the hash and the proof
-of build. A small transaction fee is payed and an amount of funds are locked.
-2. The authority minting the block fetches the derivation and verifies it is a
-valid derivation. To prevent collusion it then randomly selects n substituters
-out of the registered substituters using a VRF and includes the transaction in
-the block including the selected substituters and the proof of the VRF.
-3. All selected substituters build the derivation and send a transaction
-containing a sealed commitment to reveal the hash and the proof of build. After
-the first substituter commits all other substituters must commit within maximum
-f(t).
-4. After all substituters have commited, all substituters and the publisher
-reveal their proofs. The proofs must be revealed within time t.
-5. The proof of build is checked. Substituters that provided an invalid proof
-are slashed. The remaining substituters are rewarded proportional to their
-rewardable build time.
-
-### Substituting a derivation
-The chain is querried for the revealed hashes and fetches the package. The
-package is checked to match the proof of build.
+1. Publisher sends a claim to an authority. A small transaction fee is payed
+and an amount of funds are locked.
+2. The authority minting the block includes the transaction and using a VRF
+randomly assigns a validator from the validator pool. 
+3. The validator builds the derivation and reports the output and the build
+time to the chain.
+4. The validation algorithm is run to determine if the validation is
+sufficient. If no goes back to step 2.
+5. After the validation algorithm returns, the rewardable build times are
+computed and added to the payment period. If the result is misbehaviour, then
+the publisher and all previous validators are slashed. This
 
 ## Package layer
 The blockchain layer is extended with the concept of packages and repositories.
@@ -241,6 +268,13 @@ mirror the existing repositories, so that developers can start using it.
 
 Automated tools must be developed to import packages on chain and sources into
 ipfs.
+
+### Continuous integration
+If an input changes the package needs to be rebuilt. An automated mechanism
+for listening for dependencies being updated, and rebuilding and republishing
+the package is required. For repos if a repo package changes the repo lock
+is recomputed and the repo rebuilt. If the build succeeds, a new repo version
+is published.
 
 ## Future
 There are numerous possible extensions and applications.
