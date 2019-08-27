@@ -132,25 +132,25 @@ proportional to their rewardable build times.
 
 ### Publishing a derivation
 1. Publisher sends a transaction to an authority. The transaction contains
-the cid of the derivation, a sealed commitment to reveal the hash, the build
-time and the proof of build. A small transaction fee is payed and an amount of
-funds are locked.
+the cid of the derivation, a sealed commitment to reveal the hash and the proof
+of build. A small transaction fee is payed and an amount of funds are locked.
 2. The authority minting the block fetches the derivation and verifies it is a
 valid derivation. To prevent collusion it then randomly selects n substituters
 out of the registered substituters using a VRF and includes the transaction in
 the block including the selected substituters and the proof of the VRF.
 3. All selected substituters build the derivation and send a transaction
-containing a sealed commitment to reveal the hash, build time and the proof of
-build. After the first substituter commits all other substituters must commit
-within maximum f(t).
+containing a sealed commitment to reveal the hash and the proof of build. After
+the first substituter commits all other substituters must commit within maximum
+f(t).
 4. After all substituters have commited, all substituters and the publisher
 reveal their proofs. The proofs must be revealed within time t.
 5. The proof of build is checked. Substituters that provided an invalid proof
-are slashed. The remaining substituters are rewarded.
+are slashed. The remaining substituters are rewarded proportional to their
+rewardable build time.
 
 ### Substituting a derivation
-The chain is querried for the revealed hashes and fetches the package. The size
-and retained references are checked.
+The chain is querried for the revealed hashes and fetches the package. The
+package is checked to match the proof of build.
 
 ## Package layer
 The blockchain layer is extended with the concept of packages and repositories.
