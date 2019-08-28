@@ -63,7 +63,7 @@ a fuse implementation and an existing static web server would have reduced or
 eliminated the need for those things.
 
 
-# Decentralised and distributed build, cache and distribution system
+# Decentralised and distributed backend for software building and distribution
 
 ## File layer
 
@@ -124,7 +124,7 @@ The build layer broadcasts built derivations via a pubsub protocol. Builders
 maintain a set of trusted builders.
 
 
-# Eliminating trust
+# Eliminating trust through verifiable binaries
 
 ## Blockchain layer
 The blockchain layer is responsible for creating proofs that an output is the
