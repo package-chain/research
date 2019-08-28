@@ -1,6 +1,6 @@
 # The verified build chain project
 - Build chain is the first truly decentralized software distribution mechanism.
-  Binaries distributed with package chain are guaranteed to work on any computer
+  Binaries distributed with build chain are guaranteed to work on any computer
   running a build chain client.
 - Binaries are verified on chain. There is a trustless link between the sources,
   the binary and the build process.
@@ -251,7 +251,7 @@ distributed.
 ## Distributing binaries with cargo
 Cargo already supports emiting a build plan. A tool is written to convert that
 build plan into a set of derivations, that can be built and published using
-package chain.
+build chain.
 
 ## Integration with other chains
 The build layer can use golem to offload builds and file coin to replicate the
