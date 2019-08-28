@@ -1,13 +1,11 @@
 # The verified build chain project
-- Package chain is the first truly decentralized software distribution
-  mechanism. Software distributed with package chain is guaranteed to work on
-  any computer running a package chain client.
+- Build chain is the first truly decentralized software distribution mechanism.
+  Binaries distributed with package chain are guaranteed to work on any computer
+  running a build chain client.
 - Binaries are verified on chain. There is a trustless link between the sources,
   the binary and the build process.
-- Package chain blures the line between package management and incremental
-  build caching, leading to reduced compile times and higher developer
-  productivity.
-- Package chain integrates well with existing package managers and workflows.
+- Build chain is a decentralised and distributed backend for package managers,
+  build caches and ci systems.
 
 # Problem statement
 Developer often face two significant issues hampering their productivity.
@@ -233,14 +231,13 @@ sufficient. If no goes back to step 2.
 computed and added to the payment period. If the result is misbehaviour, then
 the publisher and all previous validators are slashed. This
 
-## Package Chain Token (PCT)
-The token account is a core component of package chain. It serves multiple
+## Build Chain Token (BCT)
+The token account is a core component of build chain. It serves multiple
 purposes. It is used to reward good behaviour and punish bad behaviour. This
-is essential for package chain to function correctly. It serves as a payment
-system for consumption of package chain resources. This is essential for
-package chain's security and availability, by preventing spam and DoS attacks.
-Finally the package chain token is used to sustain the developement of package
-chain.
+is essential for build chain to function correctly. It serves as a payment
+system for consumption of build chain resources. This is essential to build
+chain's security and availability properties. Finally the build chain token
+is used to sustain the developement of build chain.
 
 ## Initial coin distribution
 
@@ -264,15 +261,6 @@ results.
 For adding traceability from packages and version control to derivations
 two future additions are proposed.
 
-## Version control
-With the current system there is no method of tracing ipfs source releases back
-to a version control system. There is a technical limitation that needs to be
-overcome. Current version control systems like git allow having objects of
-arbitrary size making encoding it into ipfs blocks problematic. A version
-control system suitable for ipfs should be designed. A method of associating
-entries in an incremental build cache with commits could improve build times
-further.
-
 ## Package registry
 To trace a derivation back to a package definition a generic package registry
 is required. To make a package registry generic we can delegate creating
@@ -282,6 +270,15 @@ creating a multi package lock file for the entire repository, similar to what
 nix does today manually in the sources. Not versioning a repository is the
 equivalent of a rolling deployment. Some notes on a possible implementation
 can be found in `package_layer.md`.
+
+## Version control
+With the current system there is no method of tracing ipfs source releases back
+to a version control system. There is a technical limitation that needs to be
+overcome. Current version control systems like git allow having objects of
+arbitrary size making encoding it into ipfs blocks problematic. A version
+control system suitable for ipfs should be designed. A method of associating
+entries in an incremental build cache with commits could improve build times
+further.
 
 # Team
 We are not a random collection of people, but a strong team with a proven track
