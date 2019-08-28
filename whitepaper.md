@@ -1,23 +1,73 @@
-# Overview of the package chain project
-
+# The verified build chain project
 - Package chain is the first truly decentralized software distribution
   mechanism. Software distributed with package chain is guaranteed to work on
   any computer running a package chain client.
+- Binaries are verified on chain. There is a trustless link between the sources,
+  the binary and the build process.
 - Package chain blures the line between package management and incremental
   build caching, leading to reduced compile times and higher developer
   productivity.
-- Getting package managers right is hard. Package chain comes with a reference
-  package manager, which is ideal for new and niche programming languages to
-  easily create a customized package manager, taking advantage of the registry
-  and distributed, reproducible and incremental build cache.
-- Package chain is initially intends to support nix, cargo and npm
-  packages, giving it a large potential user base.
+- Package chain integrates well with existing package managers and workflows.
 
-# Technical concept
+# Problem statement
+Developer often face two significant issues hampering their productivity.
+
+1. Long build times of large projects can significantlly cause lost
+   productivity. Developers are most productive when they have short
+   compile-test cycles.
+2. Deployment of large codebases in uncontrolled environments can
+   be an annoying and painstaking process. This happens when the developer
+   envionment does not match the deployment environment.
+
+# Existing approaches to these problems
+
+## Nix package manager
+The nix package manager (Eelco Dolstra PhD 2006) was a break through, offering
+a completely new way of thinking about and performin deployment of software.
+Unlike prevous solutions, complete and correct binary deployment to any system
+running a linux kernel or mac os was possible.
+Saddly it has not found much adoption outside of the nix and guix projects. The
+nix deployment system fails to integrate with existing developer workflows,
+finding only niche application in the deployment of curated collections of
+software maintained by the nix and guix communities. These curated collections
+are expensive and time consuming to maintain and the build, storage and
+bandwidth costs are beared by the curators. It also suffers from centralisation
+of trust. Users must trust that the centralised manifest and the build
+infrastructure have not been breached.
+
+## ccache and distcc
+Ccache and sccache are distributed build caches. They work generally by hashing
+the inputs to a compiler and storing the outputs in a cache. If the compiler is
+invoked with the same inputs the result is retrieved from the cache.
+This mostly useful for batch compilers running that compile individual files. A
+more modern approach is for compilers to support incremental compilation,
+reducing the performance gain of such build caches, since they are very coarse
+grained. Distcc distributes a batch of coarse grained compiler invokations to
+multiple machines. This approach also suffers from being coarse grained working
+at the level of files.
+
+## IPFS
+IPFS (Juan Benet 2014) is a decentralised and distributed content addressed
+block store. It is a novel synthesis of distributed hash tables and merkle
+dags and combined with a new incentivised block exchange protocol to create a self
+certified, deduplicated and content addressed block store. Blocks are used to
+fetch data from untrusted peers, by imposing an upper bound on their size. This
+prevents a malicious peer from continuously sending a stream of data claiming
+it is going to match a hash.
+For distributing binaries using the nix deployment model, pure content
+addressing is insuficcient. A binary may and often does contain self references.
+For the distribution of binaries the ipfs implementation must keep track of
+those self references and transparently rewrite them when accessing a block.
+There are also implementation issues, due to different focus of the ipfs team.
+The fuse file system is slow, effort was spent instead on an ipfs http gateway,
+and the development and specification of a complex rpc and cli interface. Using
+a fuse implementation and an existing static web server would have reduced or
+eliminated the need for those things.
+
+
+# Decentralised and distributed build, cache and distribution system
 
 ## File layer
-A flexible and performant ipfs implementation optimized for the package
-management use case.
 
 ### Block store
 The block store is located at `/ipfs/blocks/{cid}`. A file or directory is
@@ -44,8 +94,6 @@ symlinks and dead store paths. A lock file `/ipfs/pins/lock` and temporary pins
 collector is running.
 
 ## Build layer
-A nix daemon is implemented using the ipfs backend, the nix package manager
-is ported and the hello package builds.
 
 ### Isolated builds
 Kernel namespaces are used to isolate the build from the system. The `unshare`
@@ -61,7 +109,9 @@ upgrades and rollbacks. The current user environment is symlinked from
 in symlinks to the active generation.
 
 ## Network layer
-The file layer is extended with efficient p2p block sharing.
+The file layer is extended with efficient p2p block sharing. The network shim
+is replaced with an actual implementation. A pubsub network is used to
+broadcast successful builds.
 
 ### Peer and block discovery
 A distributed hash table is used to locate peers that have a block. Local peers
@@ -74,6 +124,9 @@ the bitswap protocol blocks are requested and exchanged.
 ### Derivation to output mapping
 The build layer broadcasts built derivations via a pubsub protocol. Builders
 maintain a set of trusted builders.
+
+
+# Eliminating trust
 
 ## Blockchain layer
 The blockchain layer is responsible for creating proofs that an output is the
@@ -180,136 +233,6 @@ sufficient. If no goes back to step 2.
 computed and added to the payment period. If the result is misbehaviour, then
 the publisher and all previous validators are slashed. This
 
-## Package layer
-The blockchain layer is extended with the concept of packages and repositories.
-Cargo and npm are extended to work with the build and package layer.
-
-### Data model
-A repository is a named collection of packages. Repositories just like
-packages can be versioned. If a repository does not publish versions it is
-a rolling release.
-
-```rust
-struct Chain {
-    repositories: HashMap<Name, Repository>,
-    packages: HashMap<PackageId, Package>,
-}
-
-struct Repository {
-    meta: HashMap<Version, Cid>,
-    yanked: HashMap<Version, bool>,
-    packages: HashMap<Name, PackageId>,
-}
-
-struct Package {
-    meta: HashMap<Version, Cid>,
-    yanked: HashMap<Version, bool>,
-    src: HashMap<Version, Cid>,
-}
-```
-
-### Package file
-```toml
-[package]
-repository = "crates"
-name = "hello"
-version = "1.0.0"
-license = "ISC"
-
-meta = ["Cargo.toml", "deps/Cargo.toml"]
-
-src = [
-  "Cargo.toml",
-  "src/main.rs",
-  "src/lib.rs",
-]
-
-[meta-inputs]
-nixpkgs:cargo-instantiate = "*"
-
-[native-inputs]
-nixpkgs:rustc = ">=1.36"
-nixpkgs:cargo = "*"
-
-[inputs]
-crates:dep = "0.2"
-```
-
-### The cli interface
-Package identifiers have the following format:
-`{repo}:{version}/{pkg}:{version}`. Versions are optional.
-All cli commands take an optional package identifier. If the identifier is not
-specified a `pkg.toml` in the current working directory is used.
-
-```sh
-pkg fetch
-pkg lock
-pkg instantiate
-pkg build
-pkg install
-pkg publish
-pkg update
-pkg uninstall
-pkg yank
-```
-
-```sh
-repo fetch
-repo lock
-repo instantiate
-repo build
-repo publish
-repo yank
-```
-
-### Mirroring nixpkgs, crates.io and npm
-While the case studies show how it should work, in practice we will have to
-mirror the existing repositories, so that developers can start using it.
-
-Automated tools must be developed to import packages on chain and sources into
-ipfs.
-
-### Continuous integration
-If an input changes the package needs to be rebuilt. An automated mechanism
-for listening for dependencies being updated, and rebuilding and republishing
-the package is required. For repos if a repo package changes the repo lock
-is recomputed and the repo rebuilt. If the build succeeds, a new repo version
-is published.
-
-## Future
-There are numerous possible extensions and applications.
-
-### Support more platforms
-While we initially intend to focus on linux users as nix has shown there are
-no technical reasons why it cannot work on mac os. Windows support can take
-advantage of the windows subsystem for linux (wsl). An android port is also
-a possibility, but would require a larger effort due to nixpkgs collection
-not been ported yet.
-
-### Service management
-As nixos and nixops have showed, package managers naturally extend to service
-management and service deployment. Integrating package chain into nixos would
-be a great application for package chain.
-
-### Integration with other chains
-Package chain can benefit from integration with golem to offload builds. The
-file coin chain can be used for replication of packages.
-
-### Build management
-Support for low level build management to improve distributed build caching.
-The rust compiler handles incremental builds internally. Distributing the
-incremental build cache may improve build times further.
-
-### Version control
-All inputs are encoded in unixfsv2. There are some technical issues to
-distributing git repositories on ipfs, due to git objects possibly being larger
-than the size of an ipfs block. To improve tracing the heritage of a binary,
-linking the tarball release to a version control commit is desirable. Ideally
-this is achieved by designing a version control system that is distributable on
-through ipfs.
-
-# Economical concept
-
 ## Package Chain Token (PCT)
 The token account is a core component of package chain. It serves multiple
 purposes. It is used to reward good behaviour and punish bad behaviour. This
@@ -321,6 +244,44 @@ chain.
 
 ## Initial coin distribution
 
+# Integration with existing ecosystems
+
+## Distributed nix
+The nix package manager should be easily portable to a new backend. Storage and
+bandwidth is provided by nix users, trustless verified binaries can be
+distributed.
+
+## Distributing binaries with cargo
+Cargo already supports emiting a build plan. A tool is written to convert that
+build plan into a set of derivations, that can be built and published using
+package chain.
+
+## Integration with other chains
+The build layer can use golem to offload builds and file coin to replicate the
+results.
+
+# Future
+For adding traceability from packages and version control to derivations
+two future additions are proposed.
+
+## Version control
+With the current system there is no method of tracing ipfs source releases back
+to a version control system. There is a technical limitation that needs to be
+overcome. Current version control systems like git allow having objects of
+arbitrary size making encoding it into ipfs blocks problematic. A version
+control system suitable for ipfs should be designed. A method of associating
+entries in an incremental build cache with commits could improve build times
+further.
+
+## Package registry
+To trace a derivation back to a package definition a generic package registry
+is required. To make a package registry generic we can delegate creating
+derivations to a language specific tool. The package registry should support
+multiple repositories that are versionable. Versioning a repository is like
+creating a multi package lock file for the entire repository, similar to what
+nix does today manually in the sources. Not versioning a repository is the
+equivalent of a rolling deployment. Some notes on a possible implementation
+can be found in `package_layer.md`.
 
 # Team
 We are not a random collection of people, but a strong team with a proven track
@@ -328,6 +289,7 @@ record of delivering.
 
 ## Developers
 David Craven, Lead Software Engineer, co-founder
+
 Experience packaging software for functional package managers. Contributed to
 substrate - a blockchain framework, guix - a functional package manager and
 implemented an ipfs node.
