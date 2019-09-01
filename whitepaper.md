@@ -8,14 +8,17 @@
   build caches and ci systems.
 
 # Problem statement
-Developer often face two significant issues hampering their productivity.
+There are several problems with existing build and deployment systems.
 
-1. Long build times of large projects can significantlly cause lost
-   productivity. Developers are most productive when they have short
-   compile-test cycles.
-2. Deployment of large codebases in uncontrolled environments can
+1. Large codebases have long build times which result in significant amounts of
+   lost productivity.
+2. Deployment of complex codebases in uncontrolled environments can
    be an annoying and painstaking process. This happens when the developer
    envionment does not match the deployment environment.
+3. Developers carry the cost of storage and bandwidth required to store and
+   distribute binaries.
+4. Users are required to trust that the developers build infrastructure has not
+   been compromised.
 
 # Existing approaches to these problems
 
@@ -33,16 +36,15 @@ bandwidth costs are beared by the curators. It also suffers from centralisation
 of trust. Users must trust that the centralised manifest and the build
 infrastructure have not been breached.
 
-## ccache and distcc
+## ccache
 Ccache and sccache are distributed build caches. They work generally by hashing
 the inputs to a compiler and storing the outputs in a cache. If the compiler is
 invoked with the same inputs the result is retrieved from the cache.
-This mostly useful for batch compilers running that compile individual files. A
-more modern approach is for compilers to support incremental compilation,
-reducing the performance gain of such build caches, since they are very coarse
-grained. Distcc distributes a batch of coarse grained compiler invokations to
-multiple machines. This approach also suffers from being coarse grained working
-at the level of files.
+
+## distcc
+Distcc works by simulating the compiler. When the build system invokes distcc it
+forwards the arguments and inputs to a remote host. The remote host executes the
+real compiler and returns the results.
 
 ## IPFS
 IPFS (Juan Benet 2014) is a decentralised and distributed content addressed
@@ -53,9 +55,9 @@ fetch data from untrusted peers, by imposing an upper bound on their size. This
 prevents a malicious peer from continuously sending a stream of data claiming
 it is going to match a hash.
 For distributing binaries using the nix deployment model, pure content
-addressing is insuficcient. A binary may and often does contain self references.
-For the distribution of binaries the ipfs implementation must keep track of
-those self references and transparently rewrite them when accessing a block.
+addressing is insuficcient. A binary can contain self references. For the
+distribution of binaries the ipfs implementation must keep track of those self
+references and transparently rewrite them when accessing a block.
 There are also implementation issues, due to different focus of the ipfs team.
 The fuse file system is slow, effort was spent instead on an ipfs http gateway,
 and the development and specification of a complex rpc and cli interface. Using
@@ -63,23 +65,26 @@ a fuse implementation and an existing static web server would have reduced or
 eliminated the need for those things.
 
 
-# Decentralised and distributed backend for software building and distribution
+# Decentralised and distributed backend for building and distributing software
+By synthesis of nix, ccache, distcc and ipfs with blockchain technology we can
+solve these issues.
 
-## File layer
+## Storage layer
+A globally shared distributed decentralised file system.
 
 ### Block store
 The block store is located at `/ipfs/blocks/{cid}`. A file or directory is
 encoded using unixfsv2 to a list of blocks. Blocks can be added to the store
-concurrently. A db is maintained listing references to other blocks. Each
-block is represented by a file. After writing a block it is marked read only to
-prevent accidental modification.
+concurrently. Each block is represented by a file. After writing a block it is
+marked read only to prevent accidental modification. To speed up queries a db
+of block references is maintained.
 
 ### File system
 The block store is mounted as a read only fuse file system at `/ipfs/store`.
-The filesystem provides `/ipfs/store/{cid}/{path}` for efficiently reading
-unixfsv2 encoded directories. During reads the block store is checked for
-consistency, optionally hash rewriting is performed to allow self referential
-store paths.
+The filesystem provides different views of the block store. Each view is a
+plugin to the fuse file system. `/ipfs/store/{plugin}/{cid}/{path}`. A block,
+unixfsv2 views allow inspecting raw block contents and the decoded files and
+directories. During reads the block store is checked for consistency.
 
 ### Pinning and garbage collection
 Users can pin blocks by creating a symlink in `/ipfs/pins/per-user/{user}/{prog}/{cid}`
@@ -91,12 +96,67 @@ symlinks and dead store paths. A lock file `/ipfs/pins/lock` and temporary pins
 `/ipfs/pins/temp/{pid}` are used to add items to the store while the garbage
 collector is running.
 
+### Peer and block discovery
+A distributed hash table is used to locate peers that have a block. Peers
+that have a block are optimistically assumed to have all blocks that are linked
+from that block. Local peers discovered through mdns are optimistically assumed
+to have any block.
+
+### Block exchange
+The bitswap protocol is used to request and exchange blocks. To promote
+cooperation in a large population with high turnover, asymetric interests and
+zero-cost identities we use use the following techniques:
+
+1. discriminating server selection
+2. shared history
+3. maxflow based subjective reputation
+4. adaptive stranger policy
+5. short term history
+
+To prevent DoS attacks we impose an upper size limit for blocks. This allows
+continuous verifying of the received data.
+
+### Syncing block graphs
+graphsync
+
+
+## Compute layer
+
+### Derivations
+A derivation is the description of a computation. It fully describes all inputs
+to a computation, the command, all environment variables and command line
+arguments. A derivation is executed in isolated kernel namespaces. Declared
+inputs and file systems are mounted into the namespace. This allows executing
+untrusted derivations. When a derivation is untrusted, cgroups are used to
+constrain it's resource consumption. An upper bound on the runtime is used to
+ensure that the derivation terminates.
+
+### Verified computation
+Verified computation works by offloading a derivation to multiple randomly
+selected peers. The peers publish `hash(nonce, hash(output))`. After all
+peers publish their commitments, they publish the nonce and the `hash(output)`.
+If they agree the result is stored on-chain. Based on the reported cpu usage,
+their efficiency ratios are calculated. Similar projects such as golem show
+that this is possible. The difference is the concept of derivations, the use of
+containers and a strong focus on the target use case of build tasks and
+public computation.
+
+
 ## Build layer
 
-### Isolated builds
-Kernel namespaces are used to isolate the build from the system. The `unshare`
-rust library does the heavy lifting. File systems need to be mounted into the
-container and possibly resources constrained through cgroups.
+### Meta derivations
+A meta derivation can create new derivations. This is achived by mounting a
+unix domain socket in the container, which allows communication with the
+compute layer. This is useful for wrapping commands like `gcc` or `rustc`
+to offload them to the compute layer. Untrusted meta derivations should not be
+allowed to offload derivations, only substitute locally cached outputs. 
+
+### File system views
+An app view and a webapp view are implemented. The app view performs hash
+rewriting to allow self referential store paths, and the webapp view is the
+subset of unixfsv2 directories that are marked with `webapp=true`. This allows
+for a static webserver to automatically serve the files locally. In addition
+a browser plugin can list installed webapps.
 
 ### User environments
 A user environment is a hierarchy of symlinks that mirrors the union of the
@@ -106,156 +166,11 @@ upgrades and rollbacks. The current user environment is symlinked from
 `/home/{user}/.nix_profile` to `/nix/profiles/per-user/{user}/current` which
 in symlinks to the active generation.
 
-## Network layer
-The file layer is extended with efficient p2p block sharing. The network shim
-is replaced with an actual implementation. A pubsub network is used to
-broadcast successful builds.
+### Verified binaries
+An open research question is how to concatenate the proofs of the computation
+layer to achive a proof that an output is the result of a meta derivation. This
+would allow one click installs of binaries and webapps.
 
-### Peer and block discovery
-A distributed hash table is used to locate peers that have a block. Local peers
-discovered through mdns are optimistically assumed to have any block.
-
-### Block exchange
-The graphsync protocol is used to request all child blocks of a given cid. Over
-the bitswap protocol blocks are requested and exchanged.
-
-### Derivation to output mapping
-The build layer broadcasts built derivations via a pubsub protocol. Builders
-maintain a set of trusted builders.
-
-
-# Eliminating trust through verifiable binaries
-
-## Blockchain layer
-The blockchain layer is responsible for creating proofs that an output is the
-result of a derivation. The basic roles in this process are authority, publisher
-and validator. An authority is a participant in the block minting process.
-This is not a role specific to this chain but is one provided by the underlying
-blockchain framework. A publisher is any network participant that submits a
-claim, that an output is a valid output of a derivation. A validator builds a
-derivation when requested by the authority and provides the result.
-
-### Validation
-This claim is verified in an iterated probabilistic prisoners dilema game using
-the following algorithm:
-
-```rust
-struct Chain {
-    /// Registered validators
-    validators: Vec<Validator>,
-    /// Probability that result is validated again
-    p_continue: f32,
-}
-
-impl Chain {
-    pub fn claim(&self, derivation: Cid, output: Cid) {
-        let result = self.validate(derivation, output);
-        self.apply_incentives(result);
-    }
-    
-    fn validate(&self, derivation: Cid, output: Cid) -> Result {
-        let validator = self.validators[random(self.validators.len())];
-        let output2 = validator.build(derivation);
-        if output == output2 {
-            if random() > self.p_continue {
-                self.validate(derivation, output)
-            } else {
-                Result::Valid
-            }
-        } else {
-            if self.predict(output, output2) == Prediction::NonDeterminism {
-                if random() > p_continue {
-                    self.validate(derivation, output)
-                } else {
-                    Result::Valid
-                }
-            } else {
-                Result::Misbehaviour
-            }
-        }
-    }
-
-    fn predict(output1: Cid, output2: Cid) -> Prediction;
-    
-    fn apply_incentives(&self);
-}
-
-enum Result {
-    Valid,
-    Misbehaviour,
-}
-
-enum Prediction {
-    NonDeterminism,
-    Misbehaviour,
-}
-```
-
-### Prediction market
-To determine if the differences between build output are due to non determinism
-or a malicious actor a prediction market is consulted. Inspecting the results
-should reveal the cause.
-
-### Incentivising validators
-A basic incentivisation scheme would be to reward substituters by minting
-tokens according to `payout(build_time)`. This basic scheme has some downsides.
-
-1. Incentivises substituters to delay reporting their results to increase their
-payout.
-2. The inflation rate is unpredictable.
-
-To correct for this we keep track of validators efficiency factor, and introduce
-a fixed inflation rate. We define the average efficiency factor to be 1. We take
-the self reported build time `u_i` and compute the average build time `u_a`. Then
-we calculate the efficiency factors `r_i` of each validator with `r_i = u_i / u_a`.
-The average build time is added as the validators rewardable build time to the
-current payment period. At the end of the payment period a constant amount of
-tokens are minted according to the set inflation rate and are distributed
-to the validators proportionally to the rewardable build times. If a validation
-yields misbehaviour then all previous validators and the publisher are slashed.
-The publisher is slashed for trying to distribute malware and the previous
-validators are slashed for either claiming they built the derivation or copying
-the output and purposefully faking non determinism, by for example manipulating
-a time stamp.
-
-### Publishing a derivation
-1. Publisher sends a claim to an authority. A small transaction fee is payed
-and an amount of funds are locked.
-2. The authority minting the block includes the transaction and using a VRF
-randomly assigns a validator from the validator pool. 
-3. The validator builds the derivation and reports the output and the build
-time to the chain.
-4. The validation algorithm is run to determine if the validation is
-sufficient. If no goes back to step 2.
-5. After the validation algorithm returns, the rewardable build times are
-computed and added to the payment period. If the result is misbehaviour, then
-the publisher and all previous validators are slashed. This
-
-## Build Chain Token (BCT)
-The token account is a core component of build chain. It serves multiple
-purposes. It is used to reward good behaviour and punish bad behaviour. This
-is essential for build chain to function correctly. It serves as a payment
-system for consumption of build chain resources. This is essential to build
-chain's security and availability properties. Finally the build chain token
-is used to sustain the developement of build chain.
-
-## Initial coin distribution
-
-# Integration with existing ecosystems
-
-## Distributed nix
-The nix package manager should be easily portable to a new backend. Storage and
-bandwidth is provided by nix users, trustless verified binaries can be
-distributed.
-
-## Distributing binaries with cargo
-Cargo already supports emiting a build plan. A tool is written to convert that
-build plan into a set of derivations, that can be built and published using
-build chain.
-
-## Integration with other chains
-The build layer can use golem to offload builds and file coin to replicate the
-results.
 
 # Future
 For adding traceability from packages and version control to derivations
@@ -291,3 +206,6 @@ Experience packaging software for functional package managers. Contributed to
 substrate - a blockchain framework, guix - a functional package manager and
 implemented an ipfs node.
 
+# References
+- [0] The purely functional software deployment model
+- [1] Robust Incentive Techniques for Peer-to-Peer Networks

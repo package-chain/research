@@ -34,24 +34,67 @@ name = "hello"
 version = "1.0.0"
 license = "ISC"
 
-meta = ["Cargo.toml", "deps/Cargo.toml"]
-
 src = [
   "Cargo.toml",
   "src/main.rs",
   "src/lib.rs",
 ]
 
+builder = "$cargo/bin/cargo"
+args = ["build"]
+
 [meta-inputs]
-nixpkgs:cargo-instantiate = "*"
+nixpkgs:cargo = "*"
+flakes:meta-rustc = "*"
 
 [native-inputs]
 nixpkgs:rustc = ">=1.36"
-nixpkgs:cargo = "*"
 
 [inputs]
 crates:dep = "0.2"
 ```
+
+### Lock file
+A lock file 
+```toml
+[lock]
+package = "{cid}"
+block = 102
+
+[dependencies]
+nixpkgs:cargo = "{cid}"
+flakes:meta-rustc = "{cid}"
+nixpkgs:rustc = "{cid}"
+crates:dep = "{cid}"
+crates:dep2 = "{cid}"
+nixpkgs:zlib = "{cid}"
+```
+
+### Build file
+A build file
+```toml
+[[build]]
+name = "linux"
+package = "{cid}"
+lock = "{cid}"
+args = ["build", "--features A,B"]
+metadrv = "{cid}"
+subderivations = ["{cid}", ...]
+output = "{cid}"
+system = "x86_64-linux-musl"
+
+[[build]]
+name = "windows"
+...
+```
+
+### Building a package
+The builder is run. Some packages can be substituted with meta packages. These
+meta packages record their cli invokation and inputs and create a derivation.
+The derivation is sent to the store using a unix socket and is offloaded to other
+nodes using the compute layer. If the compute layer already knows the output of
+the derivation, the derivation is fetched through ipfs. After that the build
+continues.
 
 ### The cli interface
 Package identifiers have the following format:
