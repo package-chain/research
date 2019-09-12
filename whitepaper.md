@@ -96,6 +96,9 @@ symlinks and dead store paths. A lock file `/ipfs/pins/lock` and temporary pins
 `/ipfs/pins/temp/{pid}` are used to add items to the store while the garbage
 collector is running.
 
+### CRDT db
+TODO: Required for building a shared ledger
+
 ### Peer and block discovery
 A distributed hash table is used to locate peers that have a block. Peers
 that have a block are optimistically assumed to have all blocks that are linked
