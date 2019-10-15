@@ -1,5 +1,7 @@
-# The verified build chain project
-- Build chain is the first truly decentralized software distribution mechanism.
+# package-chain
+> **deprecated**: see [github](https://github.com/package-chain/)
+
+- Package chain is the first truly decentralized software distribution mechanism.
   Binaries distributed with build chain are guaranteed to work on any computer
   running a build chain client.
 - Binaries are verified on chain. There is a trustless link between the sources,
